@@ -1,0 +1,55 @@
+name: Vigilar citas Vithas
+
+on:
+  schedule:
+    # Comprobación periódica (UTC). El repo es privado: GitHub regala 2000
+    # min/mes y cada ejecución cuenta como 1 min, así que cada 30 min (~1450
+    # min/mes) cabe. Si haces el repo público (minutos ilimitados) puedes
+    # bajarlo a "*/10 * * * *".
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Qué ejecutar"
+        type: choice
+        options: [check, test-notify]
+        default: check
+
+concurrency:
+  group: vithas-monitor
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Recuperar estado (huecos ya avisados)
+        uses: actions/cache/restore@v4
+        with:
+          path: state.json
+          key: vithas-state-${{ github.run_id }}
+          restore-keys: vithas-state-
+
+      - name: Comprobar disponibilidad
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          VITHAS_CONFIG: ${{ secrets.VITHAS_CONFIG }}
+        run: |
+          # Cada búsqueda manda un "sigo buscando" (sin sonido); las citas nuevas
+          # y los fallos repetidos llegan como alerta con sonido.
+          if [ "${{ inputs.mode }}" = "test-notify" ]; then
+            python3 monitor.py --test-notify
+          else
+            python3 monitor.py --heartbeat
+          fi
+
+      - name: Guardar estado
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: state.json
+          key: vithas-state-${{ github.run_id }}
