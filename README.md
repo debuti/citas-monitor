@@ -61,19 +61,22 @@ En **Actions → Vigilar citas Vithas → Run workflow**:
 - elige `test-notify`: te debería llegar un mensaje de prueba;
 - elige `check`: hace una búsqueda real y te manda el "sigo buscando".
 
-A partir de ahí busca cada 30 minutos y te escribe en cada búsqueda.
+A partir de ahí busca cada 10 minutos y te escribe en cada búsqueda.
 
 ## Frecuencia
 
-Como el repo es privado, GitHub Actions regala 2000 minutos al mes. Con una
-comprobación cada 30 minutos se gastan unos 1450 minutos al mes. Para comprobar más a
-menudo tienes dos opciones:
+Busca cada 10 minutos (`cron` en `.github/workflows/monitor.yml`). Como el repo es
+público, los minutos de GitHub Actions son ilimitados. Si lo vuelves privado, solo hay
+2000 minutos gratis al mes: sube el cron a `*/30 * * * *` (unos 1450 min/mes).
 
-- **Hacer el repo público**: los minutos pasan a ser ilimitados y puedes cambiar el
-  cron a `*/10 * * * *` en `.github/workflows/monitor.yml`. El repo no contiene datos
-  personales: el token, el chat_id y el médico van en los secretos, y con Telegram
-  configurado el texto de los mensajes no se escribe en los logs.
-- **Ejecutarlo en un PC o una Raspberry** que esté siempre encendido:
+El repo no contiene datos personales: el token, el chat_id y el médico van en los
+secretos, y con Telegram configurado el texto de los mensajes no se escribe en los logs.
+
+GitHub desactiva los workflows programados de los repos públicos tras 60 días sin
+actividad; el paso "Mantener activo" del workflow lo evita.
+
+Para buscar todavía más a menudo, puedes ejecutarlo en un PC o una Raspberry que esté
+siempre encendido:
   ```bash
   export TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_ID=... VITHAS_CONFIG='{...}'
   python3 monitor.py --loop 300 --heartbeat   # cada 5 minutos

@@ -2,11 +2,10 @@ name: Vigilar citas Vithas
 
 on:
   schedule:
-    # Comprobación periódica (UTC). El repo es privado: GitHub regala 2000
-    # min/mes y cada ejecución cuenta como 1 min, así que cada 30 min (~1450
-    # min/mes) cabe. Si haces el repo público (minutos ilimitados) puedes
-    # bajarlo a "*/10 * * * *".
-    - cron: "*/30 * * * *"
+    # Cada 10 minutos. El repo es público, así que los minutos de Actions son
+    # ilimitados; si volviera a ser privado, sube a "*/30 * * * *" para no
+    # pasar de los 2000 min/mes gratis.
+    - cron: "*/10 * * * *"
   workflow_dispatch:
     inputs:
       mode:
@@ -18,6 +17,10 @@ on:
 concurrency:
   group: vithas-monitor
   cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: write  # para "Mantener activo" (abajo)
 
 jobs:
   check:
@@ -46,6 +49,14 @@ jobs:
           else
             python3 monitor.py --heartbeat
           fi
+
+      # En repos públicos GitHub desactiva los workflows programados tras 60 días
+      # sin actividad en el repo; volver a habilitarlo reinicia esa cuenta atrás.
+      - name: Mantener activo
+        if: github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/monitor.yml/enable" || true
 
       - name: Guardar estado
         if: always()
