@@ -10,7 +10,8 @@
     "hospital_id": "sc...@tt_vithas_one_..._prod",
     "doctor_id": "sc...@tt_vithas_one_..._prod",
     "insurance_id": "sc...",
-    "activities": "Consulta"
+    "activities": "Consulta",
+    "max_days": 60
   },
   {
     "id": "quiron-traumato",
