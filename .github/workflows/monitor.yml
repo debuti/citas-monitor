@@ -5,6 +5,8 @@ on:
     # Cada 10 minutos. El repo es público, así que los minutos de Actions son
     # ilimitados; si volviera a ser privado, sube a "*/30 * * * *" para no
     # pasar de los 2000 min/mes gratis.
+    # Si tras desactivar y reactivar el workflow (o renombrar la rama) el cron no
+    # vuelve a ejecutarse, un push que toque este fichero lo registra de nuevo.
     - cron: "*/10 * * * *"
   workflow_dispatch:
     inputs:
