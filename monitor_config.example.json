@@ -1,0 +1,37 @@
+[
+  {
+    "id": "vithas-traumato",
+    "provider": "vithas",
+    "enabled": true,
+    "chat_ids": ["123456789"],
+    "doctor_name": "Dr. Nombre Apellido (Traumatología)",
+    "hospital_name": "Hospital Vithas Madrid ...",
+    "insurance_name": "Nombre del seguro",
+    "hospital_id": "sc...@tt_vithas_one_..._prod",
+    "doctor_id": "sc...@tt_vithas_one_..._prod",
+    "insurance_id": "sc...",
+    "activities": "Consulta"
+  },
+  {
+    "id": "quiron-traumato",
+    "provider": "quiron",
+    "enabled": true,
+    "chat_ids": ["987654321", "123456789"],
+    "doctor_name": "Dra. Nombre Apellido (Traumatología)",
+    "hospital_name": "Hospital Universitario Quirónsalud ...",
+    "insurance_name": "ASISA Póliza/Colectivos privados",
+    "professional_id": "1234",
+    "specialty_id": "47",
+    "province_id": "28",
+    "center_id": "0342...",
+    "associated_center_id": "0342...",
+    "insurance_id": "23",
+    "max_days": 30
+  },
+  {
+    "id": "quiron-desactivado",
+    "provider": "quiron",
+    "enabled": false,
+    "chat_ids": ["987654321"]
+  }
+]

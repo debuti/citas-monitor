@@ -1,4 +1,4 @@
-name: Vigilar citas Vithas
+name: Vigilar citas médicas
 
 on:
   schedule:
@@ -15,7 +15,7 @@ on:
         default: check
 
 concurrency:
-  group: vithas-monitor
+  group: citas-monitor
   cancel-in-progress: false
 
 permissions:
@@ -33,12 +33,17 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: state.json
-          key: vithas-state-${{ github.run_id }}
-          restore-keys: vithas-state-
+          key: citas-state-${{ github.run_id }}
+          # vithas-state-: estado de cuando el repo solo vigilaba Vithas.
+          restore-keys: |
+            citas-state-
+            vithas-state-
 
       - name: Comprobar disponibilidad
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          MONITOR_CONFIG: ${{ secrets.MONITOR_CONFIG }}
+          # Formato antiguo, solo se usa si no existe MONITOR_CONFIG.
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           VITHAS_CONFIG: ${{ secrets.VITHAS_CONFIG }}
         run: |
@@ -63,4 +68,4 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: state.json
-          key: vithas-state-${{ github.run_id }}
+          key: citas-state-${{ github.run_id }}
