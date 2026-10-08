@@ -14,6 +14,7 @@ Uso:
     python monitor.py --heartbeat      # además avisa "sigo buscando" aunque no haya huecos
     python monitor.py --test-notify    # manda un mensaje de prueba a cada chat
     python monitor.py --telegram-chat-id   # muestra el chat_id tras escribir al bot
+    python monitor.py --check-config   # comprueba MONITOR_CONFIG sin buscar nada
 
 Variables de entorno:
     MONITOR_CONFIG        JSON con la lista de vigilantes (ver README)
@@ -329,8 +330,35 @@ def load_watches():
 
 # ---------------------------------------------------------------------- Telegram
 
-def telegram(watch, text, silent=False):
+def tg_call(token, method, params):
+    req = urllib.request.Request(f"https://api.telegram.org/bot{token}/{method}",
+                                 data=urllib.parse.urlencode(params).encode())
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.load(resp)["result"]
+    except urllib.error.HTTPError as e:
+        try:
+            desc = json.loads(e.read()).get("description", "")
+        except ValueError:
+            desc = ""
+        raise RuntimeError(f"Telegram {method}: HTTP {e.code} {desc}") from None
+
+
+def telegram(watch, text, wstate=None, status=False):
+    """Manda `text` a todos los chats del vigilante.
+
+    Los avisos (citas, fallos) son mensajes nuevos con sonido. Los de estado
+    ("sigo buscando", status=True) van sin sonido y editan el último mensaje de
+    estado de cada chat en vez de mandar otro; tras un aviso se empieza uno nuevo,
+    para que el estado quede siempre debajo del último aviso.
+    """
     token = watch.get("bot_token") or os.environ.get("TELEGRAM_BOT_TOKEN")
+    status_msgs = {} if wstate is None else wstate.setdefault("status_msgs", {})
+    if not status:
+        status_msgs.clear()
+    for chat_id in list(status_msgs):
+        if chat_id not in watch["chat_ids"]:
+            del status_msgs[chat_id]
     if not token or not watch["chat_ids"]:
         print(f"--- mensaje [{watch['id']}] ---\n{text}\n---------------")
         print("(bot_token/chat_id no configurados: no se envía)")
@@ -338,19 +366,27 @@ def telegram(watch, text, silent=False):
     # Con Telegram configurado no imprimimos el texto: los logs de Actions de un
     # repo público son visibles y el mensaje lleva el nombre del médico.
     for chat_id in watch["chat_ids"]:
-        body = urllib.parse.urlencode({
-            "chat_id": chat_id,
-            "text": text,
-            "parse_mode": "HTML",
-            "disable_web_page_preview": "true",
-            # Los "sigo buscando" llegan sin sonido; las citas y los fallos, con sonido.
-            "disable_notification": "true" if silent else "false",
-        }).encode()
-        req = urllib.request.Request(f"https://api.telegram.org/bot{token}/sendMessage", data=body)
+        params = {"chat_id": chat_id, "text": text, "parse_mode": "HTML",
+                  "disable_web_page_preview": "true"}
         try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                if resp.status != 200:
-                    raise RuntimeError(f"Telegram respondió {resp.status}")
+            msg_id = status_msgs.get(chat_id) if status else None
+            if msg_id:
+                try:
+                    tg_call(token, "editMessageText", {**params, "message_id": msg_id})
+                    print(f"[{watch['id']}] Mensaje de estado actualizado en Telegram.")
+                    continue
+                except RuntimeError as e:
+                    if "message is not modified" in str(e):
+                        continue
+                    # Lo han borrado o ya no se puede editar: mandamos uno nuevo.
+                    print(f"[{watch['id']}] No se pudo editar el estado ({e}); se manda otro.")
+            msg = tg_call(token, "sendMessage", {
+                **params,
+                # Los "sigo buscando" llegan sin sonido; las citas y los fallos, con sonido.
+                "disable_notification": "true" if status else "false",
+            })
+            if status:
+                status_msgs[chat_id] = msg["message_id"]
         except Exception as e:  # noqa: BLE001 - un chat roto no debe tumbar a los demás
             print(f"[{watch['id']}] Error enviando a Telegram: {e}", file=sys.stderr)
             continue
@@ -432,14 +468,14 @@ def run_watch(w, wstate, heartbeat=False):
             telegram(w, f"⚠️ El vigilante de citas está fallando "
                         f"({failures} veces seguidas).\n\n{header(w)}\n\n"
                         f"Error: <code>{str(e)[:500]}</code>\n\n"
-                        f"Mientras tanto, revisa a mano: {booking_url}")
+                        f"Mientras tanto, revisa a mano: {booking_url}", wstate)
         elif heartbeat:
             telegram(w, f"❌ {hhmm} La búsqueda ha fallado ({failures} seguidas): "
-                        f"<code>{str(e)[:200]}</code>", silent=True)
+                        f"<code>{str(e)[:200]}</code>\n{header(w)}", wstate, status=True)
         return
 
     if wstate.get("consecutive_failures", 0) >= FAILURE_ALERT_THRESHOLD:
-        telegram(w, f"✅ El vigilante de citas vuelve a funcionar.\n\n{header(w)}")
+        telegram(w, f"✅ El vigilante de citas vuelve a funcionar.\n\n{header(w)}", wstate)
 
     # Solo cuentan los huecos dentro del plazo; los de más allá se mencionan en
     # el "sigo buscando" para saber cómo va la agenda.
@@ -469,14 +505,14 @@ def run_watch(w, wstate, heartbeat=False):
                     lines.append(f"  … y {len(new_for_act) - 15} más")
         telegram(w, "🚨 <b>¡HAY CITAS DISPONIBLES!</b>\n\n" + header(w) + "\n\n"
                     + "\n".join(lines)
-                    + f"\n\n👉 Reserva ya: {booking_url}")
+                    + f"\n\n👉 Reserva ya: {booking_url}", wstate)
     elif heartbeat:
         plazo = f" en los próximos {w['max_days']} días" if w["max_days"] else ""
         estado = (f"{total} huecos{plazo} (ya avisados, sigue habiendo)" if total
                   else f"sin huecos todavía{plazo}")
         if not total and later:
             estado += f"; el primero libre es el {fmt_slot(later[0])}"
-        telegram(w, f"👀 {hhmm} Sigo buscando: {estado}.\n{header(w)}", silent=True)
+        telegram(w, f"👀 {hhmm} Sigo buscando: {estado}.\n{header(w)}", wstate, status=True)
 
     wstate.update(
         consecutive_failures=0,
@@ -510,16 +546,24 @@ def main():
     p.add_argument("--heartbeat", action="store_true", help='avisar "sigo buscando" aunque no haya novedades')
     p.add_argument("--test-notify", action="store_true", help="enviar un mensaje de prueba a cada chat")
     p.add_argument("--telegram-chat-id", action="store_true", help="mostrar los chat_id que han escrito al bot")
+    p.add_argument("--check-config", action="store_true", help="comprobar MONITOR_CONFIG y resumirla")
     args = p.parse_args()
 
     if args.telegram_chat_id:
         print_chat_ids()
         return 0
     watches = load_watches()
+    if args.check_config:
+        for w in watches:
+            print(f"{w['id']}: {PROVIDER_NAMES[w['provider']]}, {w['doctor_name']}, "
+                  + ("activo" if w["enabled"] else "desactivado")
+                  + f", {len(w['chat_ids'])} chat(s)"
+                  + (f", próximos {w['max_days']} días" if w["max_days"] else ""))
+        return 0
     if args.test_notify:
         for w in watches:
             if w["enabled"]:
-                    telegram(w, f"🔔 Prueba: las alertas de citas funcionan.\n\n{header(w)}")
+                telegram(w, f"🔔 Prueba: las alertas de citas funcionan.\n\n{header(w)}")
         return 0
     if args.loop:
         while True:

@@ -38,8 +38,11 @@ devuelve los huecos de unos 4 meses a partir de hoy; si no hay, devuelve `[]`.
 - con `max_days` solo avisa de los huecos de los próximos N días;
 - si un médico falla 3 veces seguidas (la web cambia, está caída...), avisa por Telegram
   para que no te quedes esperando sin saberlo, y avisa también cuando se recupera;
-- en cada búsqueda manda un "👀 Sigo buscando: sin huecos todavía" **sin sonido**, para
-  que sepas que funciona; las citas nuevas (🚨) y los fallos (⚠️) llegan **con sonido**;
+- mientras no hay novedades mantiene un único mensaje "👀 Sigo buscando: sin huecos
+  todavía" **sin sonido**, que se edita en cada búsqueda con la hora, para que sepas
+  que funciona sin llenarte el chat;
+- las citas nuevas (🚨) y los fallos (⚠️) llegan como mensaje nuevo **con sonido**;
+  después, el "sigo buscando" vuelve a empezar en un mensaje nuevo debajo;
 - solo usa la biblioteca estándar de Python 3, sin dependencias.
 
 ## Puesta en marcha
@@ -70,6 +73,17 @@ secret** y crea estos dos secretos:
 - `TELEGRAM_BOT_TOKEN`
 - `MONITOR_CONFIG`: los médicos a vigilar y a quién avisar, en JSON (ver "Qué médicos
   vigilar" más abajo).
+
+GitHub no deja ver ni editar un secreto, solo reemplazarlo entero. Lo más cómodo es
+tener la configuración en un `monitor_config.json` local (está en `.gitignore`, así que
+no se sube al repo) y, cada vez que la cambies, ejecutar:
+
+```bash
+./subir-config.sh     # comprueba el JSON y lo sube con la CLI de GitHub (gh)
+```
+
+No uses una *variable* de Actions en lugar del secreto: los valores de las variables
+salen en los logs, que en un repo público ve cualquiera.
 
 Los workflows programados solo se ejecutan desde la **rama por defecto** del repo. Si
 mueves el código a otra rama (por ejemplo `main`), ponla como rama por defecto.
