@@ -1,6 +1,6 @@
 # citas-monitor
 
-Vigila la agenda de médicos de **Vithas** y **Quirónsalud** (con un hospital y un seguro
+Vigila la agenda de médicos de **Vithas**, **Quirónsalud** y **Viamed** (con un hospital y un seguro
 concretos) y avisa por **Telegram** en cuanto aparecen huecos para reservar. Una sola
 ejecución revisa todos los médicos configurados, y cada uno avisa a su propio chat de
 Telegram, así que sirve para varias personas a la vez. Qué médicos vigilar y a quién
@@ -31,6 +31,18 @@ seguidos (casi un año) para cada actividad.
 
 Los parámetros van como formulario (`application/x-www-form-urlencoded`). La búsqueda
 devuelve los huecos de unos 4 meses a partir de hoy; si no hay, devuelve `[]`.
+
+**Viamed** (`www.viamedsalud.com/pedir-cita/`, que es un portal de TuoTempo):
+
+| Paso | Endpoint (`GET https://app.tuotempo.com/api/v3/tt_portal_viamed`) |
+|---|---|
+| Actividades del médico (1ºVISITA, CONSULTA...) | `/activities?resourceid=...&insuranceid=...` |
+| Huecos disponibles | `/availabilities?resourceid=...&activityid=...&insuranceid=...&start_date=DD/MM/AAAA` |
+
+Todas las llamadas llevan `version=1.1&lang=es&application=MOP&client=browser_desktop`,
+como hace la web. Cada búsqueda devuelve los huecos de los primeros días libres a partir
+de `start_date`, así que el script repite la búsqueda desde el último día devuelto (3
+veces por defecto).
 
 `monitor.py`:
 - avisa **solo de los huecos nuevos**: si un hueco desaparece y vuelve a salir (por
@@ -136,7 +148,7 @@ con los dos proveedores y uno desactivado, en
 ```
 
 Claves comunes:
-- `provider`: `vithas` o `quiron`.
+- `provider`: `vithas`, `quiron` o `viamed`.
 - `chat_ids`: lista de chats de Telegram a los que avisar (una o varias personas o
   grupos). Si solo es uno, también vale `"chat_id": "111"`.
 - `enabled`: `false` para dejar de vigilar ese médico sin borrarlo de la lista (por
@@ -180,6 +192,18 @@ Los IDs salen de la propia API (`POST`, parámetros como formulario):
 - Prestaciones: `/catalog/professionals/services/channels` con `idProvincia`,
   `idCentro`, `codCentroAsociado`, `idProfesionalPdP`, `idEspecialidadGlobal` y
   `financialType=2`.
+
+### Viamed
+
+- Obligatorios: `resource_id` (el médico) e `insurance_id` (el seguro).
+- Opcionales: `activities` (por ejemplo `"1ºVISITA"`; por defecto vigila todas) y
+  `windows` (cuántas búsquedas seguidas hace hacia delante; por defecto 3).
+
+Los IDs salen de la propia API (`GET`, con los parámetros de arriba):
+- Médico: `/resources`, que lista todos los médicos de todos los hospitales: su
+  `resourceid` (del tipo `sc...@tt_viamed2_<hospital>_prod`) es `resource_id`. Algunos
+  médicos tienen otra entrada "- PRIVADOS" para pago sin seguro.
+- Seguro: `/insurances`: su `insuranceid` es `insurance_id`.
 
 ### Formato antiguo
 

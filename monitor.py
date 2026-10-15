@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Vigila la agenda de médicos de Vithas y Quirónsalud y avisa por Telegram cuando hay huecos.
+"""Vigila la agenda de médicos de Vithas, Quirónsalud y Viamed y avisa por Telegram cuando hay huecos.
 
-Usa las APIs internas de las webs de citas (https://areaprivada.vithas.es y
-https://www.quironsalud.com/es/cita-medica), las mismas que llama el navegador al
-pedir cita sin identificarse. Solo depende de la biblioteca estándar de Python.
+Usa las APIs internas de las webs de citas (https://areaprivada.vithas.es,
+https://www.quironsalud.com/es/cita-medica y https://www.viamedsalud.com/pedir-cita/),
+las mismas que llama el navegador al pedir cita sin identificarse. Solo depende de la biblioteca estándar de Python.
 
 Una ejecución revisa todos los "vigilantes" configurados; cada uno tiene su médico
 y su chat de Telegram, así que se pueden avisar a personas distintas.
@@ -251,8 +251,82 @@ class Quiron:
         return {name: sorted(slots) for name, slots in found.items()}
 
 
-PROVIDERS = {"vithas": Vithas, "quiron": Quiron}
-PROVIDER_NAMES = {"vithas": "Vithas", "quiron": "Quirónsalud"}
+# ------------------------------------------------------------------------ Viamed
+
+class Viamed:
+    # Portal de citas de TuoTempo (el iframe de https://www.viamedsalud.com/pedir-cita/).
+    API = "https://app.tuotempo.com/api/v3"
+    BOOKING_URL = "https://www.viamedsalud.com/pedir-cita/"
+    DEFAULTS = {
+        "db_name": "tt_portal_viamed",
+        "resource_id": "",   # resourceid del médico, "sc...@tt_viamed2_<hospital>_prod"
+        "insurance_id": "",  # insuranceid del seguro
+        # Nombres de actividad a vigilar, separados por comas ("" = todas),
+        # p. ej. "1ºVISITA".
+        "activities": "",
+        # Cada búsqueda devuelve los huecos de los primeros días libres a partir de
+        # la fecha pedida; seguimos desde el último día devuelto hasta N veces.
+        "windows": 3,
+    }
+    REQUIRED = ("resource_id", "insurance_id")
+
+    def __init__(self, cfg):
+        self.cfg = cfg
+        cfg["windows"] = int(cfg["windows"])
+
+    def get(self, path, params):
+        # Los mismos parámetros que añade la web a todas sus llamadas.
+        params = {"version": "1.1", "lang": "es", "application": "MOP",
+                  "client": "browser_desktop", **params}
+        data = http_json(f"{self.API}/{self.cfg['db_name']}/{path}?"
+                         f"{urllib.parse.urlencode(params)}",
+                         {"accept": "application/json, text/plain, */*"})
+        if data.get("result") != "OK":
+            raise RuntimeError(f"{path}: {data.get('exception') or data.get('msg')}")
+        return data["return"]["results"]
+
+    def get_activities(self):
+        """Actividades (1ºVISITA, CONSULTA...) que el médico ofrece para ese seguro."""
+        cfg = self.cfg
+        data = self.get("activities", {"resourceid": cfg["resource_id"],
+                                       "insuranceid": cfg["insurance_id"]})
+        wanted = wanted_names(cfg["activities"])
+        activities = [(a["activityid"], a["activityTitle"]) for a in data
+                      if not wanted or a["activityTitle"].strip().lower() in wanted]
+        if not activities:
+            raise RuntimeError("El médico no tiene actividades para este seguro "
+                               "(¿ha cambiado algún ID?).")
+        return activities
+
+    def get_slots(self, activity_id):
+        cfg = self.cfg
+        start = dt.date.today()
+        slots = set()
+        for _ in range(cfg["windows"]):
+            data = self.get("availabilities", {
+                "resourceid": cfg["resource_id"],
+                "activityid": activity_id,
+                "insuranceid": cfg["insurance_id"],
+                "start_date": start.strftime("%d/%m/%Y"),
+            })
+            found = [dt.datetime.strptime(f"{a['start_date']} {a['startTime']}", "%d/%m/%Y %H:%M")
+                     for a in data.get("availabilities") or []]
+            if not found:
+                break
+            slots.update(d.isoformat() for d in found)
+            start = max(found).date() + dt.timedelta(days=1)
+        return slots
+
+    def check(self):
+        """Devuelve {actividad: [fecha ISO, ...]} con todos los huecos encontrados."""
+        activities = self.get_activities()
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
+            futures = {name: pool.submit(self.get_slots, aid) for aid, name in activities}
+            return {name: sorted(fut.result()) for name, fut in futures.items()}
+
+
+PROVIDERS = {"vithas": Vithas, "quiron": Quiron, "viamed": Viamed}
+PROVIDER_NAMES = {"vithas": "Vithas", "quiron": "Quirónsalud", "viamed": "Viamed"}
 
 
 # ------------------------------------------------------------------------ Config
