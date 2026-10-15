@@ -264,9 +264,8 @@ class Viamed:
         # Nombres de actividad a vigilar, separados por comas ("" = todas),
         # p. ej. "1ºVISITA".
         "activities": "",
-        # Cada búsqueda devuelve los huecos de los primeros días libres a partir de
-        # la fecha pedida (~1 semana); seguimos desde el último día devuelto hasta
-        # pasar de max_days o, si no hay max_days, hasta N veces.
+        # Cada búsqueda devuelve una semana a partir de la fecha pedida; sin
+        # max_days se miran estas semanas.
         "windows": 10,
     }
     REQUIRED = ("resource_id", "insurance_id")
@@ -302,31 +301,28 @@ class Viamed:
 
     def get_slots(self, activity_id):
         cfg = self.cfg
-        start = dt.date.today()
-        last = start + dt.timedelta(days=cfg["max_days"]) if cfg["max_days"] else None
-        slots = set()
-        # Con max_days buscamos hasta pasarlo (con un tope por si acaso); sin él,
-        # hasta "windows" búsquedas.
-        for _ in range(60 if last else cfg["windows"]):
+        today = dt.date.today()
+        # Cada búsqueda cubre 7 días a partir de la fecha pedida, así que lanzamos
+        # todas a la vez: las necesarias para cubrir max_days o, sin él, "windows".
+        n = cfg["max_days"] // 7 + 1 if cfg["max_days"] else cfg["windows"]
+        starts = [today + dt.timedelta(days=7 * i) for i in range(n)]
+
+        def search(start):
             data = self.get("availabilities", {
                 "resourceid": cfg["resource_id"],
                 "activityid": activity_id,
                 "insuranceid": cfg["insurance_id"],
                 "start_date": start.strftime("%d/%m/%Y"),
             })
-            found = [(a.get("machid"),
-                      dt.datetime.strptime(f"{a['start_date']} {a['startTime']}", "%d/%m/%Y %H:%M"))
-                     for a in data.get("availabilities") or []]
-            if not found:
-                break
             # Si el médico no tiene huecos esos días, la API propone los de otros
-            # médicos de la misma actividad: nos quedamos solo con los suyos, pero
-            # seguimos buscando a partir del último día devuelto.
-            slots.update(d.isoformat() for machid, d in found if machid == cfg["resource_id"])
-            start = max(d for _, d in found).date() + dt.timedelta(days=1)
-            if last and start > last:
-                break
-        return slots
+            # médicos de la misma actividad: nos quedamos solo con los suyos.
+            return {dt.datetime.strptime(f"{a['start_date']} {a['startTime']}",
+                                         "%d/%m/%Y %H:%M").isoformat()
+                    for a in data.get("availabilities") or []
+                    if a.get("machid") == cfg["resource_id"]}
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
+            return set().union(*pool.map(search, starts))
 
     def check(self):
         """Devuelve {actividad: [fecha ISO, ...]} con todos los huecos encontrados."""
