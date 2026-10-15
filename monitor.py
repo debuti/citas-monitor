@@ -265,14 +265,16 @@ class Viamed:
         # p. ej. "1ºVISITA".
         "activities": "",
         # Cada búsqueda devuelve los huecos de los primeros días libres a partir de
-        # la fecha pedida; seguimos desde el último día devuelto hasta N veces.
-        "windows": 3,
+        # la fecha pedida (~1 semana); seguimos desde el último día devuelto hasta N
+        # veces, o hasta pasar de max_days.
+        "windows": 10,
     }
     REQUIRED = ("resource_id", "insurance_id")
 
     def __init__(self, cfg):
         self.cfg = cfg
         cfg["windows"] = int(cfg["windows"])
+        cfg["max_days"] = int(cfg.get("max_days") or 0)
 
     def get(self, path, params):
         # Los mismos parámetros que añade la web a todas sus llamadas.
@@ -301,6 +303,7 @@ class Viamed:
     def get_slots(self, activity_id):
         cfg = self.cfg
         start = dt.date.today()
+        last = start + dt.timedelta(days=cfg["max_days"]) if cfg["max_days"] else None
         slots = set()
         for _ in range(cfg["windows"]):
             data = self.get("availabilities", {
@@ -309,12 +312,18 @@ class Viamed:
                 "insuranceid": cfg["insurance_id"],
                 "start_date": start.strftime("%d/%m/%Y"),
             })
-            found = [dt.datetime.strptime(f"{a['start_date']} {a['startTime']}", "%d/%m/%Y %H:%M")
+            found = [(a.get("machid"),
+                      dt.datetime.strptime(f"{a['start_date']} {a['startTime']}", "%d/%m/%Y %H:%M"))
                      for a in data.get("availabilities") or []]
             if not found:
                 break
-            slots.update(d.isoformat() for d in found)
-            start = max(found).date() + dt.timedelta(days=1)
+            # Si el médico no tiene huecos esos días, la API propone los de otros
+            # médicos de la misma actividad: nos quedamos solo con los suyos, pero
+            # seguimos buscando a partir del último día devuelto.
+            slots.update(d.isoformat() for machid, d in found if machid == cfg["resource_id"])
+            start = max(d for _, d in found).date() + dt.timedelta(days=1)
+            if last and start > last:
+                break
         return slots
 
     def check(self):
