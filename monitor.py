@@ -265,8 +265,8 @@ class Viamed:
         # p. ej. "1ºVISITA".
         "activities": "",
         # Cada búsqueda devuelve los huecos de los primeros días libres a partir de
-        # la fecha pedida (~1 semana); seguimos desde el último día devuelto hasta N
-        # veces, o hasta pasar de max_days.
+        # la fecha pedida (~1 semana); seguimos desde el último día devuelto hasta
+        # pasar de max_days o, si no hay max_days, hasta N veces.
         "windows": 10,
     }
     REQUIRED = ("resource_id", "insurance_id")
@@ -305,7 +305,9 @@ class Viamed:
         start = dt.date.today()
         last = start + dt.timedelta(days=cfg["max_days"]) if cfg["max_days"] else None
         slots = set()
-        for _ in range(cfg["windows"]):
+        # Con max_days buscamos hasta pasarlo (con un tope por si acaso); sin él,
+        # hasta "windows" búsquedas.
+        for _ in range(60 if last else cfg["windows"]):
             data = self.get("availabilities", {
                 "resourceid": cfg["resource_id"],
                 "activityid": activity_id,

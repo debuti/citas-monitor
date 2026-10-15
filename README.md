@@ -42,7 +42,7 @@ devuelve los huecos de unos 4 meses a partir de hoy; si no hay, devuelve `[]`.
 Todas las llamadas llevan `version=1.1&lang=es&application=MOP&client=browser_desktop`,
 como hace la web. Cada búsqueda devuelve los huecos de los primeros días libres a partir
 de `start_date` (más o menos una semana), así que el script repite la búsqueda desde el
-último día devuelto (hasta 10 veces, o hasta pasar de `max_days`). Si el médico no tiene
+último día devuelto hasta pasar de `max_days` (o, sin `max_days`, 10 veces). Si el médico no tiene
 huecos esos días, la API devuelve los de otros médicos de la misma actividad: el script
 se queda solo con los del médico pedido.
 
@@ -199,8 +199,8 @@ Los IDs salen de la propia API (`POST`, parámetros como formulario):
 
 - Obligatorios: `resource_id` (el médico) e `insurance_id` (el seguro).
 - Opcionales: `activities` (por ejemplo `"1ºVISITA"`; por defecto vigila todas) y
-  `windows` (cuántas búsquedas seguidas hace hacia delante; por defecto 10, unas 10
-  semanas).
+  `windows` (sin `max_days`, cuántas búsquedas seguidas hace hacia delante; por
+  defecto 10, unas 10 semanas).
 
 Los IDs salen de la propia API (`GET`, con los parámetros de arriba):
 - Médico: `/resources`, que lista todos los médicos de todos los hospitales: su
