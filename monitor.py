@@ -514,8 +514,13 @@ def save_state(state):
         json.dump(state, f, indent=2, ensure_ascii=False)
 
 
+def slot_time(iso):
+    """Fecha y hora local del hueco, sin zona: Vithas la añade (+01:00) y los demás no."""
+    return dt.datetime.fromisoformat(iso).replace(tzinfo=None)
+
+
 def fmt_slot(iso):
-    d = dt.datetime.fromisoformat(iso)
+    d = slot_time(iso)
     days = ["lun", "mar", "mié", "jue", "vie", "sáb", "dom"]
     return f"{days[d.weekday()]} {d:%d/%m/%Y %H:%M}"
 
@@ -564,8 +569,8 @@ def run_watch(w, wstate, heartbeat=False):
     if w["max_days"]:
         limit = (local_now() + dt.timedelta(days=w["max_days"])).replace(tzinfo=None)
         later = sorted(s for slots in found.values() for s in slots
-                       if dt.datetime.fromisoformat(s) > limit)
-        found = {act: [s for s in slots if dt.datetime.fromisoformat(s) <= limit]
+                       if slot_time(s) > limit)
+        found = {act: [s for s in slots if slot_time(s) <= limit]
                  for act, slots in found.items()}
 
     seen = set(wstate.get("seen_slots", []))
@@ -608,10 +613,13 @@ def run_watch(w, wstate, heartbeat=False):
 def run_once(watches, heartbeat=False):
     state = load_state(watches)
     for w in watches:
-        if w["enabled"]:
-            run_watch(w, state["watches"].setdefault(w["id"], {}), heartbeat=heartbeat)
-        else:
+        if not w["enabled"]:
             print(f"[{w['id']}] desactivado, no se vigila.")
+            continue
+        try:
+            run_watch(w, state["watches"].setdefault(w["id"], {}), heartbeat=heartbeat)
+        except Exception as e:  # noqa: BLE001 - un fallo del script no debe parar a los demás
+            print(f"[{w['id']}] ERROR inesperado: {e!r}", file=sys.stderr)
     # Olvidamos el estado de vigilantes que ya no están configurados.
     state["watches"] = {w["id"]: state["watches"][w["id"]]
                         for w in watches if w["id"] in state["watches"]}
