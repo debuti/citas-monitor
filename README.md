@@ -169,6 +169,10 @@ Claves comunes:
 - Opcionales: `is_private` (`"1"` si pagas sin seguro), `activities` (por ejemplo
   `"Consulta"`; por defecto vigila todas), `windows` y `window_days` (cuánto mira
   hacia delante; por defecto 5 × 70 días).
+- Si el médico sigue existiendo pero ahora no ofrece ninguna de las `activities`
+  pedidas (por ejemplo, han cerrado la primera consulta), no cuenta como fallo: se
+  sigue vigilando como "sin huecos" y avisará cuando vuelva a aparecer. Igual con
+  `activities` en Viamed y `services` en Quirónsalud.
 
 Los IDs salen de la propia API, con la cabecera `platform: web`:
 - `GET /appointments/v1/filter/hospital?idSite=<provincia>` (Madrid es `16`)

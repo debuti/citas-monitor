@@ -63,6 +63,14 @@ def wanted_names(csv):
     return {a.strip().lower() for a in csv.split(",") if a.strip()}
 
 
+def not_offered_now(offered, csv, what):
+    """El médico existe pero ahora no ofrece lo pedido (p. ej. cierran la primera
+    consulta): no es un fallo, se sigue vigilando sin huecos hasta que vuelva."""
+    print(f"  {what} {csv!r} no ofertadas ahora (el médico solo ofrece: "
+          f"{', '.join(sorted(set(offered)))}); se cuenta como sin huecos.", file=sys.stderr)
+    return []
+
+
 # ------------------------------------------------------------------------ Vithas
 
 class Vithas:
@@ -109,15 +117,18 @@ class Vithas:
             "insuranceId": cfg["insurance_id"],
         })
         wanted = wanted_names(cfg["activities"])
-        activities = []
+        activities, offered = [], []
         specs = data.get("coveredSpecialities", [])
         if cfg["is_private"] in ("1", "true"):
             # Sin seguro (pago privado) la API las devuelve como "no cubiertas".
             specs = specs + data.get("specialitiesNotCovered", [])
         for spec in specs:
             for act in spec.get("activityData", []):
+                offered.append(act["activityName"])
                 if not wanted or act["activityName"].strip().lower() in wanted:
                     activities.append((act["activityId"], act["activityName"]))
+        if not activities and offered:
+            return not_offered_now(offered, cfg["activities"], "Actividades")
         if not activities:
             raise RuntimeError("El médico no tiene actividades cubiertas para este seguro "
                                "(¿ha cambiado algún ID?).")
@@ -202,14 +213,19 @@ class Quiron:
             "financialType": "2",  # la web siempre lo pide así, con o sin seguro
         })
         wanted = wanted_names(cfg["services"])
-        services = []
+        services, offered = [], []
         for svc in data:
             if not (svc.get("publicable") and svc.get("citable")):
                 continue
             for ch in svc.get("canales", []):
                 name = ch["nombrePrestacion"]
-                if ch.get("publicable") and (not wanted or name.strip().lower() in wanted):
+                if not ch.get("publicable"):
+                    continue
+                offered.append(name)
+                if not wanted or name.strip().lower() in wanted:
                     services.append((ch["idPrestacionGlobal"], ch["codCitacion"], name))
+        if not services and offered:
+            return not_offered_now(offered, cfg["services"], "Prestaciones")
         if not services:
             raise RuntimeError("El médico no tiene prestaciones citables "
                                "(¿ha cambiado algún ID?).")
@@ -294,6 +310,9 @@ class Viamed:
         wanted = wanted_names(cfg["activities"])
         activities = [(a["activityid"], a["activityTitle"]) for a in data
                       if not wanted or a["activityTitle"].strip().lower() in wanted]
+        if not activities and data:
+            return not_offered_now([a["activityTitle"] for a in data], cfg["activities"],
+                                   "Actividades")
         if not activities:
             raise RuntimeError("El médico no tiene actividades para este seguro "
                                "(¿ha cambiado algún ID?).")
