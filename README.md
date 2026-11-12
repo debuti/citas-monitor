@@ -131,8 +131,9 @@ llega un mensaje con botones para aceptarlo o rechazarlo. Cada persona puede ten
 vigilancias como mucho (`MAX_WATCHES_PER_USER`).
 
 Las vigilancias de los usuarios y lo ya avisado se guardan en `data/` (SQLite y
-`state.json`), fuera del repo. Si existe `monitor_config.json`, sus vigilancias también
-se revisan, igual que antes.
+`state.json`), fuera del repo, en una carpeta montada en el contenedor: sobreviven a
+caídas, reinicios y reconstrucciones. `monitor_config.json` no se usa en este modo;
+todas las vigilancias se dan de alta desde el bot.
 
 Instalación en la máquina Linux con Docker:
 ```bash

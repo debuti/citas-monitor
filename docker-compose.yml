@@ -5,10 +5,8 @@ services:
     image: citas-monitor
     container_name: citas-monitor
     env_file: .env
-    environment:
-      MONITOR_CONFIG_FILE: /app/monitor_config.json
+    # Tu usuario (debuti), para que data/ no quede como root.
+    user: "1000:1000"
     volumes:
       - ./data:/data
-      # Vigilancias fijas del administrador (opcional; si no existe, se ignora).
-      - ./monitor_config.json:/app/monitor_config.json:ro
     restart: "no"
