@@ -412,6 +412,18 @@ def handle_callback(cb):
             send(chat_id, "🗑 Borrada. Ya no te aviso de ese médico.")
         else:
             send(chat_id, "Esa vigilancia ya no existe.")
+    elif kind == "done":
+        watch = next((w for w in store.watches() if w["id"] == arg), None)
+        if watch and store.delete_watch(chat_id, arg):
+            send(chat_id, f"🎉 ¡Genial! Dejo de vigilar a {esc(watch['doctor_name'])}. "
+                          "Si necesitas otra, /nueva.")
+            if chat_id != ADMIN:
+                send(ADMIN, f"🎉 <b>{esc(user_name(chat_id))}</b> ha conseguido cita con "
+                            f"{esc(watch['doctor_name'])} y ha dejado de vigilarlo.", silent=True)
+        else:
+            send(chat_id, "Esa vigilancia ya no existe.")
+    elif kind == "keep":
+        send(chat_id, "👍 Sigo buscando y te aviso de los próximos huecos.")
     elif kind == "cancel":
         sessions.pop(chat_id, None)
         send(chat_id, "Vale, cancelado.")
@@ -486,10 +498,16 @@ def all_watches():
     return fixed + [w for w in users if w["id"] not in ids]
 
 
-def notify_admin(watch, new_slots):
-    """Copia silenciosa al administrador de los avisos de citas que reciben los demás."""
+def on_alert(watch, new_slots):
+    """Tras un aviso de citas: pregunta al dueño si ya tiene cita y avisa al administrador."""
     owner = watch["chat_ids"][0]
-    if not ADMIN or owner == ADMIN or not watch["id"].startswith("u"):
+    if not watch["id"].startswith("u"):  # vigilancias fijas de MONITOR_CONFIG
+        return
+    send(owner, "¿Has conseguido cita? Si es así, dejo de vigilar a "
+                f"{esc(watch['doctor_name'])}.",
+         [[{"text": "✅ Sí, dejar de vigilar", "callback_data": f"done:{watch['id']}"},
+           {"text": "🔁 No, sigue buscando", "callback_data": "keep"}]], silent=True)
+    if not ADMIN or owner == ADMIN:
         return
     send(ADMIN, f"🔔 <b>{esc(user_name(owner))}</b> ha recibido aviso de "
                 f"{len(new_slots)} hueco(s) con {esc(watch['doctor_name'])} "
@@ -497,7 +515,7 @@ def notify_admin(watch, new_slots):
                 f"El primero: {monitor.fmt_slot(new_slots[0])}.", silent=True)
 
 
-monitor.ON_ALERT = notify_admin
+monitor.ON_ALERT = on_alert
 
 
 def check_now(watch):
