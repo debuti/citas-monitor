@@ -39,6 +39,8 @@ import urllib.parse
 import urllib.request
 
 STATE_FILE = os.environ.get("STATE_FILE") or "state.json"
+# Si se define (lo hace bot.py), se llama con (vigilante, huecos nuevos) tras cada aviso.
+ON_ALERT = None
 FAILURE_ALERT_THRESHOLD = 3
 USER_AGENT = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
               "(KHTML, like Gecko) Chrome/141.0 Safari/537.36")
@@ -625,6 +627,13 @@ def run_watch(w, wstate, heartbeat=False):
         telegram(w, "🚨 <b>¡HAY CITAS DISPONIBLES!</b>\n\n" + header(w) + "\n\n"
                     + "\n".join(lines)
                     + f"\n\n👉 Reserva ya: {booking_url}", wstate)
+        wstate.update(alerts=wstate.get("alerts", 0) + 1, last_alert_at=now,
+                      last_alert_new=len(new))
+        if ON_ALERT:
+            try:
+                ON_ALERT(w, sorted(s.split("|", 1)[1] for s in new))
+            except Exception as e:  # noqa: BLE001
+                print(f"[{w['id']}] ON_ALERT: {e}", file=sys.stderr)
     elif heartbeat:
         plazo = f" en los próximos {w['max_days']} días" if w["max_days"] else ""
         estado = (f"{total} huecos{plazo} (ya avisados, sigue habiendo)" if total

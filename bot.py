@@ -115,9 +115,10 @@ def tg(method, **params):
     return monitor.tg_call(TOKEN, method, params)
 
 
-def send(chat_id, text, buttons=None):
+def send(chat_id, text, buttons=None, silent=False):
     params = {"chat_id": chat_id, "text": text, "parse_mode": "HTML",
-              "disable_web_page_preview": "true"}
+              "disable_web_page_preview": "true",
+              "disable_notification": "true" if silent else "false"}
     if buttons:
         params["reply_markup"] = {"inline_keyboard": buttons}
     try:
@@ -275,11 +276,36 @@ def finish(chat_id, sess, days):
     threading.Thread(target=check_now, args=(watches[0],), daemon=True).start()
 
 
+def fmt_when(iso):
+    try:
+        when = dt.datetime.fromisoformat(iso).astimezone(monitor.local_now().tzinfo)
+    except (TypeError, ValueError):
+        return "?"
+    return when.strftime("%d/%m %H:%M")
+
+
+def watch_status(wstate):
+    """Línea de estado para el administrador: huecos ahora y avisos mandados."""
+    if not wstate.get("last_check_at"):
+        return "   ⏳ aún sin revisar"
+    if wstate.get("consecutive_failures"):
+        now = f"❌ falla ({wstate['consecutive_failures']} seguidas)"
+    else:
+        now = f"{wstate.get('last_total', 0)} huecos ahora"
+    if wstate.get("alerts"):
+        alerts = (f"🔔 {wstate['alerts']} aviso(s), el último {fmt_when(wstate['last_alert_at'])}"
+                  f" ({wstate.get('last_alert_new', '?')} huecos)")
+    else:
+        alerts = "sin avisos todavía"
+    return f"   {now} · {alerts}"
+
+
 def list_watches(chat_id):
     mine = store.watches(None if chat_id == ADMIN else chat_id)
     if not mine:
         send(chat_id, "No tienes vigilancias. Crea una con /nueva.")
         return
+    states = monitor.load_state([])["watches"] if chat_id == ADMIN else {}
     lines, rows = [], []
     for i, w in enumerate(mine, 1):
         act = w.get("services") or w.get("activities") or "cualquier cita"
@@ -289,7 +315,8 @@ def list_watches(chat_id):
         lines.append(f"{i}. <b>{esc(w['doctor_name'])}</b>{who}\n"
                      f"   {esc(monitor.PROVIDER_NAMES[w['provider']])} · "
                      f"{esc(w.get('hospital_name', ''))} · {esc(w.get('insurance_name', ''))}\n"
-                     f"   {esc(act)}, {plazo}")
+                     f"   {esc(act)}, {plazo}"
+                     + ("\n" + watch_status(states.get(w["id"], {})) if chat_id == ADMIN else ""))
         rows.append(button(f"🗑 Borrar {i}. {w['doctor_name']}", f"del:{w['id']}"))
     send(chat_id, "\n\n".join(lines), rows)
 
@@ -457,6 +484,20 @@ def all_watches():
         log(f"Vigilancias de usuarios con errores: {errors}")
     ids = {w["id"] for w in fixed}
     return fixed + [w for w in users if w["id"] not in ids]
+
+
+def notify_admin(watch, new_slots):
+    """Copia silenciosa al administrador de los avisos de citas que reciben los demás."""
+    owner = watch["chat_ids"][0]
+    if not ADMIN or owner == ADMIN or not watch["id"].startswith("u"):
+        return
+    send(ADMIN, f"🔔 <b>{esc(user_name(owner))}</b> ha recibido aviso de "
+                f"{len(new_slots)} hueco(s) con {esc(watch['doctor_name'])} "
+                f"({monitor.PROVIDER_NAMES[watch['provider']]}). "
+                f"El primero: {monitor.fmt_slot(new_slots[0])}.", silent=True)
+
+
+monitor.ON_ALERT = notify_admin
 
 
 def check_now(watch):
