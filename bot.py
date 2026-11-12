@@ -300,18 +300,22 @@ def watch_status(wstate):
     return f"   {now} · {alerts}"
 
 
-def list_watches(chat_id):
-    mine = store.watches(None if chat_id == ADMIN else chat_id)
+def list_watches(chat_id, others=False):
+    """/mis: las vigilancias propias. /sus (admin): las de los demás, con su estado."""
+    if others:
+        mine = [w for w in store.watches() if w["chat_ids"][0] != ADMIN]
+    else:
+        mine = store.watches(chat_id)
     if not mine:
-        send(chat_id, "No tienes vigilancias. Crea una con /nueva.")
+        send(chat_id, "Nadie más tiene vigilancias." if others
+                      else "No tienes vigilancias. Crea una con /nueva.")
         return
     states = monitor.load_state([])["watches"] if chat_id == ADMIN else {}
     lines, rows = [], []
     for i, w in enumerate(mine, 1):
         act = w.get("services") or w.get("activities") or "cualquier cita"
         plazo = f"{w['max_days']} días" if w.get("max_days") else "sin límite"
-        who = (f" — de {esc(user_name(w['chat_ids'][0]))}"
-               if chat_id == ADMIN and w["chat_ids"][0] != ADMIN else "")
+        who = f" — de {esc(user_name(w['chat_ids'][0]))}" if others else ""
         lines.append(f"{i}. <b>{esc(w['doctor_name'])}</b>{who}\n"
                      f"   {esc(monitor.PROVIDER_NAMES[w['provider']])} · "
                      f"{esc(w.get('hospital_name', ''))} · {esc(w.get('insurance_name', ''))}\n"
@@ -368,7 +372,8 @@ def handle_message(msg):
     command = text.split()[0].split("@")[0].lower() if text.startswith("/") else ""
     if command in ("/start", "/ayuda", "/help"):
         sessions.pop(chat_id, None)
-        send(chat_id, HELP + ("\n\n/usuarios — gestionar quién usa el bot"
+        send(chat_id, HELP + ("\n\n/sus — vigilancias de los demás y sus avisos"
+                              "\n/usuarios — gestionar quién usa el bot"
                               if chat_id == ADMIN else ""))
     elif command == "/nueva":
         start_wizard(chat_id)
@@ -378,6 +383,9 @@ def handle_message(msg):
     elif command == "/cancelar":
         sessions.pop(chat_id, None)
         send(chat_id, "Vale, cancelado.")
+    elif command == "/sus" and chat_id == ADMIN:
+        sessions.pop(chat_id, None)
+        list_watches(chat_id, others=True)
     elif command == "/usuarios" and chat_id == ADMIN:
         list_users(chat_id)
     elif command:
@@ -556,8 +564,9 @@ def main():
             {"command": "cancelar", "description": "Salir del asistente"},
             {"command": "ayuda", "description": "Cómo funciona"}]
         tg("setMyCommands", commands=commands)
-        # El administrador ve además /usuarios en su menú (solo en su chat).
+        # El administrador ve además /sus y /usuarios en su menú (solo en su chat).
         tg("setMyCommands", scope={"type": "chat", "chat_id": int(ADMIN)}, commands=commands + [
+            {"command": "sus", "description": "Vigilancias de los demás y sus avisos"},
             {"command": "usuarios", "description": "Dar o quitar acceso a la gente"}])
     except Exception as e:  # noqa: BLE001
         log(f"Aviso al configurar el bot: {e}")

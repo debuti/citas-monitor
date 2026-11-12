@@ -122,8 +122,10 @@ En el bot:
   → cuál de los encontrados (médico, especialidad y hospital) → seguro (se escribe y se
   filtra) → tipo de consulta → plazo (15, 30, 60, 90 días o sin límite). Nada más darla
   de alta mira si ya hay huecos.
-- `/mis`: lista sus vigilancias con un botón para borrar cada una (el administrador ve
-  las de todos).
+- `/mis`: lista sus vigilancias con un botón para borrar cada una.
+- `/sus` (solo el administrador): las vigilancias de los demás, con cuántos huecos hay
+  ahora y cuántos avisos han recibido. Además, el administrador recibe una copia
+  silenciosa de cada aviso de citas de los demás y de cuándo dicen que ya tienen cita.
 - `/usuarios` (solo el administrador): dar o quitar acceso.
 
 Es privado: cuando alguien nuevo escribe al bot, al administrador (`ADMIN_CHAT_ID`) le
