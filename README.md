@@ -137,12 +137,12 @@ se revisan, igual que antes.
 Instalación en la máquina Linux con Docker:
 ```bash
 cp .env.example .env    # pon TELEGRAM_BOT_TOKEN y ADMIN_CHAT_ID
-sudo ./instalar.sh      # crea y arranca el servicio citas-monitor
-journalctl -u citas-monitor -f
+./instalar.sh           # servicio de usuario, sin sudo (necesita grupo docker y linger)
+journalctl --user -u citas-monitor -f
 ```
 `instalar.sh` instala `citas-monitor.service`, que lanza `docker compose up` cuando
 arranca Docker y lo vuelve a lanzar si se cae. Para actualizar tras un `git pull`:
-`sudo systemctl restart citas-monitor` (reconstruye la imagen).
+`systemctl --user restart citas-monitor` (reconstruye la imagen).
 
 ## Qué médicos vigilar (`MONITOR_CONFIG`)
 

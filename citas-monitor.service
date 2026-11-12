@@ -1,19 +1,22 @@
-# Plantilla: instalar.sh rellena @DIR@ y @DOCKER@ y la copia a /etc/systemd/system.
+# Plantilla de servicio de usuario de systemd (sin sudo): instalar.sh rellena @DIR@ y
+# @DOCKER@ y la copia a ~/.config/systemd/user. Con "linger" activado arranca al
+# encender la máquina aunque no haya nadie conectado.
 [Unit]
 Description=citas-monitor (bot de Telegram de citas médicas)
-Requires=docker.service
-After=docker.service network-online.target
+After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
 WorkingDirectory=@DIR@
+# Un servicio de usuario no puede depender de docker.service: esperamos a que responda.
+ExecStartPre=/bin/sh -c 'until @DOCKER@ info >/dev/null 2>&1; do sleep 3; done'
 ExecStartPre=-@DOCKER@ compose down --remove-orphans
 ExecStart=@DOCKER@ compose up --build --abort-on-container-exit
 ExecStop=@DOCKER@ compose down
 Restart=always
 RestartSec=15
-TimeoutStartSec=600
+TimeoutStartSec=900
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target
