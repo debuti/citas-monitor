@@ -110,6 +110,40 @@ En **Actions → Vigilar citas médicas → Run workflow**:
 
 A partir de ahí busca cada 10 minutos y escribe en cada búsqueda.
 
+## Bot para la familia (Docker + systemd)
+
+`bot.py` deja que cada familiar se apunte sus propias vigilancias desde Telegram, sin
+tocar ninguna configuración. Corre en un contenedor Docker siempre encendido que
+también hace las búsquedas cada 10 minutos, así que **sustituye al workflow de GitHub
+Actions** (apágalo al ponerlo en marcha para que no lleguen avisos dobles).
+
+En el bot:
+- `/nueva`: asistente con botones: Vithas / Quirónsalud / Viamed → apellido del médico
+  → cuál de los encontrados (médico, especialidad y hospital) → seguro (se escribe y se
+  filtra) → tipo de consulta → plazo (15, 30, 60, 90 días o sin límite). Nada más darla
+  de alta mira si ya hay huecos.
+- `/mis`: lista sus vigilancias con un botón para borrar cada una (el administrador ve
+  las de todos).
+- `/usuarios` (solo el administrador): dar o quitar acceso.
+
+Es privado: cuando alguien nuevo escribe al bot, al administrador (`ADMIN_CHAT_ID`) le
+llega un mensaje con botones para aceptarlo o rechazarlo. Cada persona puede tener 5
+vigilancias como mucho (`MAX_WATCHES_PER_USER`).
+
+Las vigilancias de los usuarios y lo ya avisado se guardan en `data/` (SQLite y
+`state.json`), fuera del repo. Si existe `monitor_config.json`, sus vigilancias también
+se revisan, igual que antes.
+
+Instalación en la máquina Linux con Docker:
+```bash
+cp .env.example .env    # pon TELEGRAM_BOT_TOKEN y ADMIN_CHAT_ID
+sudo ./instalar.sh      # crea y arranca el servicio citas-monitor
+journalctl -u citas-monitor -f
+```
+`instalar.sh` instala `citas-monitor.service`, que lanza `docker compose up` cuando
+arranca Docker y lo vuelve a lanzar si se cae. Para actualizar tras un `git pull`:
+`sudo systemctl restart citas-monitor` (reconstruye la imagen).
+
 ## Qué médicos vigilar (`MONITOR_CONFIG`)
 
 Es una lista JSON con un elemento ("vigilante") por médico. Tienes un ejemplo completo,

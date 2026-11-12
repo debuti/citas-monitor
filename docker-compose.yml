@@ -1,0 +1,14 @@
+# Lo arranca y lo reinicia systemd (citas-monitor.service): ver instalar.sh.
+services:
+  bot:
+    build: .
+    image: citas-monitor
+    container_name: citas-monitor
+    env_file: .env
+    environment:
+      MONITOR_CONFIG_FILE: /app/monitor_config.json
+    volumes:
+      - ./data:/data
+      # Vigilancias fijas del administrador (opcional; si no existe, se ignora).
+      - ./monitor_config.json:/app/monitor_config.json:ro
+    restart: "no"

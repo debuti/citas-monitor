@@ -18,6 +18,7 @@ Uso:
 
 Variables de entorno:
     MONITOR_CONFIG        JSON con la lista de vigilantes (ver README)
+    MONITOR_CONFIG_FILE   fichero con ese JSON, si no está MONITOR_CONFIG
     TELEGRAM_BOT_TOKEN    token del bot (cada vigilante puede usar otro con "bot_token")
     STATE_FILE            fichero de estado (por defecto state.json)
     VITHAS_CONFIG, TELEGRAM_CHAT_ID
@@ -28,6 +29,7 @@ Variables de entorno:
 import argparse
 import concurrent.futures
 import datetime as dt
+import html
 import json
 import os
 import sys
@@ -376,9 +378,13 @@ def as_bool(value):
     return bool(value)
 
 
-def load_watches():
+def load_watches(required=True):
     """Lista de vigilantes: cada uno es un dict con provider, enabled, chat_ids, id y su config."""
     raw = os.environ.get("MONITOR_CONFIG", "").strip()
+    path = os.environ.get("MONITOR_CONFIG_FILE", "").strip()
+    if not raw and path and os.path.exists(path):
+        with open(path, encoding="utf-8") as f:
+            raw = f.read().strip()
     if raw:
         try:
             watches = json.loads(raw)
@@ -394,9 +400,19 @@ def load_watches():
             sys.exit(f"VITHAS_CONFIG no es un JSON válido: {e}")
         watches = [{"id": "vithas", "provider": "vithas",
                     "chat_id": os.environ.get("TELEGRAM_CHAT_ID", ""), **legacy}]
-    else:
+    elif required:
         sys.exit("Falta configurar MONITOR_CONFIG (ver README).")
+    else:
+        return []
 
+    result, errors = normalize_watches(watches)
+    if errors:
+        sys.exit("Configuración incorrecta:\n  " + "\n  ".join(errors))
+    return result
+
+
+def normalize_watches(watches):
+    """Completa cada vigilante con los valores por defecto. Devuelve (vigilantes, errores)."""
     result, errors = [], []
     for i, w in enumerate(watches):
         provider = str(w.get("provider", "")).lower()
@@ -423,9 +439,7 @@ def load_watches():
     ids = [w["id"] for w in result]
     if len(ids) != len(set(ids)):
         errors.append("hay vigilantes con el mismo id")
-    if errors:
-        sys.exit("Configuración incorrecta:\n  " + "\n  ".join(errors))
-    return result
+    return result, errors
 
 
 # ---------------------------------------------------------------------- Telegram
@@ -545,9 +559,9 @@ def fmt_slot(iso):
 
 
 def header(w):
-    extra = " · ".join(x for x in (PROVIDER_NAMES[w["provider"]], w["hospital_name"],
-                                   w["insurance_name"]) if x)
-    return f"<b>{w['doctor_name']}</b>\n{extra}"
+    extra = " · ".join(html.escape(x) for x in (PROVIDER_NAMES[w["provider"]],
+                                                w["hospital_name"], w["insurance_name"]) if x)
+    return f"<b>{html.escape(w['doctor_name'])}</b>\n{extra}"
 
 
 def local_now():
@@ -604,7 +618,7 @@ def run_watch(w, wstate, heartbeat=False):
         for act, slots in found.items():
             new_for_act = [s for s in slots if f"{act}|{s}" in new]
             if new_for_act:
-                lines.append(f"<b>{act}</b> ({len(new_for_act)} nuevos):")
+                lines.append(f"<b>{html.escape(act)}</b> ({len(new_for_act)} nuevos):")
                 lines += [f"  • {fmt_slot(s)}" for s in new_for_act[:15]]
                 if len(new_for_act) > 15:
                     lines.append(f"  … y {len(new_for_act) - 15} más")

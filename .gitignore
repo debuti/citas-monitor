@@ -1,3 +1,5 @@
 state.json
 __pycache__/
 monitor_config.json
+data/
+.env

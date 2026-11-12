@@ -1,0 +1,19 @@
+# Plantilla: instalar.sh rellena @DIR@ y @DOCKER@ y la copia a /etc/systemd/system.
+[Unit]
+Description=citas-monitor (bot de Telegram de citas médicas)
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=@DIR@
+ExecStartPre=-@DOCKER@ compose down --remove-orphans
+ExecStart=@DOCKER@ compose up --build --abort-on-container-exit
+ExecStop=@DOCKER@ compose down
+Restart=always
+RestartSec=15
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target
