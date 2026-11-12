@@ -302,7 +302,8 @@ def user_name(chat_id):
 def list_users(chat_id):
     users = store.users()
     if not users:
-        send(chat_id, "Nadie más ha escrito al bot todavía.")
+        send(chat_id, "Nadie más ha escrito al bot todavía. Cuando alguien lo haga, te "
+                      "llegará un mensaje para aceptarlo o rechazarlo.")
         return
     rows = []
     for uid, name, status in users:
@@ -490,11 +491,15 @@ def main():
     store = Store(os.path.join(DATA_DIR, "bot.db"))
     try:
         tg("deleteWebhook")
-        tg("setMyCommands", commands=[
+        commands = [
             {"command": "nueva", "description": "Vigilar un médico"},
             {"command": "mis", "description": "Ver o borrar mis vigilancias"},
             {"command": "cancelar", "description": "Salir del asistente"},
-            {"command": "ayuda", "description": "Cómo funciona"}])
+            {"command": "ayuda", "description": "Cómo funciona"}]
+        tg("setMyCommands", commands=commands)
+        # El administrador ve además /usuarios en su menú (solo en su chat).
+        tg("setMyCommands", scope={"type": "chat", "chat_id": int(ADMIN)}, commands=commands + [
+            {"command": "usuarios", "description": "Dar o quitar acceso a la gente"}])
     except Exception as e:  # noqa: BLE001
         log(f"Aviso al configurar el bot: {e}")
     log("Bot en marcha.")
