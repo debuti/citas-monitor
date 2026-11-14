@@ -161,10 +161,13 @@ class Vithas:
 
     def check(self):
         """Devuelve {actividad: [fecha ISO, ...]} con todos los huecos encontrados."""
-        today = dt.date.today()
+        first, last = search_range(self.cfg)
         activities = self.get_activities()
-        starts = [None] + [today + dt.timedelta(days=i * self.cfg["window_days"])
-                           for i in range(1, self.cfg["windows"])]
+        step = self.cfg["window_days"]
+        n = (last - first).days // step + 1 if last else self.cfg["windows"]
+        starts = [first + dt.timedelta(days=i * step) for i in range(n)]
+        if starts[0] == dt.date.today():
+            starts[0] = None  # sin startDate, como la primera búsqueda de la web
         # La API tarda ~10 s por llamada; en paralelo para no gastar minutos de Actions.
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as pool:
             futures = {(act_name, start): pool.submit(self.get_slots, act_id, start)
@@ -248,7 +251,7 @@ class Quiron:
             "financialType": "1" if insured else "2",
             "garanteHIS": "false",
             "espPresHIS": "false",
-            "fechaInicio": dt.date.today().strftime("%d/%m/%Y"),
+            "fechaInicio": search_range(cfg)[0].strftime("%d/%m/%Y"),
             "horaInicio": "000000",
             "idProvincia": cfg["province_id"],
             "idProfesionalPdP": cfg["professional_id"],
@@ -324,11 +327,11 @@ class Viamed:
 
     def get_slots(self, activity_id):
         cfg = self.cfg
-        today = dt.date.today()
+        first, last = search_range(cfg)
         # Cada búsqueda cubre 7 días a partir de la fecha pedida, así que lanzamos
-        # todas a la vez: las necesarias para cubrir max_days o, sin él, "windows".
-        n = cfg["max_days"] // 7 + 1 if cfg["max_days"] else cfg["windows"]
-        starts = [today + dt.timedelta(days=7 * i) for i in range(n)]
+        # todas a la vez: las necesarias para cubrir el plazo o, sin él, "windows".
+        n = (last - first).days // 7 + 1 if last else cfg["windows"]
+        starts = [first + dt.timedelta(days=7 * i) for i in range(n)]
 
         def search(start):
             data = self.get("availabilities", {
@@ -369,6 +372,10 @@ COMMON_DEFAULTS = {
     "insurance_name": "",
     # Solo avisa de huecos en los próximos N días (0 = sin límite).
     "max_days": 0,
+    # Solo avisa de huecos entre estas fechas (AAAA-MM-DD, ambas incluidas; "" = sin
+    # límite por ese lado). Se combinan con max_days.
+    "date_from": "",
+    "date_to": "",
     # Mandar el "sigo buscando" en cada búsqueda (si se ejecuta con --heartbeat).
     "heartbeat": True,
 }
@@ -430,6 +437,15 @@ def normalize_watches(watches):
         chats = cfg.pop("chat_id", None) or cfg.get("chat_ids") or []
         cfg["chat_ids"] = [str(c) for c in (chats if isinstance(chats, list) else [chats]) if c]
         cfg["max_days"] = int(cfg["max_days"])
+        try:
+            for k in ("date_from", "date_to"):
+                cfg[k] = dt.date.fromisoformat(cfg[k]).isoformat() if cfg[k] else ""
+        except (TypeError, ValueError):
+            errors.append(f"{cfg['id']}: date_from/date_to deben ser AAAA-MM-DD")
+            continue
+        if cfg["date_from"] and cfg["date_to"] and cfg["date_from"] > cfg["date_to"]:
+            errors.append(f"{cfg['id']}: date_from es posterior a date_to")
+            continue
         result.append(cfg)
         if not cfg["enabled"]:
             continue  # uno desactivado puede estar a medio configurar
@@ -554,6 +570,38 @@ def slot_time(iso):
     return dt.datetime.fromisoformat(iso).replace(tzinfo=None)
 
 
+def search_range(w):
+    """(primer día, último día o None) en que interesan los huecos, según date_from,
+    date_to y max_days. El primero nunca es anterior a hoy."""
+    today = local_now().date()
+    first = max(today, dt.date.fromisoformat(w["date_from"])) if w.get("date_from") else today
+    lasts = []
+    if w.get("date_to"):
+        lasts.append(dt.date.fromisoformat(w["date_to"]))
+    if w.get("max_days"):
+        lasts.append(today + dt.timedelta(days=int(w["max_days"])))
+    return first, min(lasts) if lasts else None
+
+
+def fmt_date(iso):
+    return dt.date.fromisoformat(iso).strftime("%d/%m/%Y")
+
+
+def plazo_text(w):
+    """El plazo de la vigilancia en palabras, p. ej. "entre el 01/12/2026 y el 15/12/2026"."""
+    parts = []
+    if w.get("date_from") and w.get("date_to"):
+        parts.append(f"entre el {fmt_date(w['date_from'])} y el {fmt_date(w['date_to'])}"
+                     if w["date_from"] != w["date_to"] else f"el {fmt_date(w['date_to'])}")
+    elif w.get("date_from"):
+        parts.append(f"desde el {fmt_date(w['date_from'])}")
+    elif w.get("date_to"):
+        parts.append(f"hasta el {fmt_date(w['date_to'])}")
+    if w.get("max_days"):
+        parts.append(f"en los próximos {w['max_days']} días")
+    return " y ".join(parts)
+
+
 def fmt_slot(iso):
     d = slot_time(iso)
     days = ["lun", "mar", "mié", "jue", "vie", "sáb", "dom"]
@@ -579,6 +627,14 @@ def run_watch(w, wstate, heartbeat=False):
     hhmm = local_now().strftime("%H:%M")
     heartbeat = heartbeat and w["heartbeat"]
     booking_url = PROVIDERS[w["provider"]].BOOKING_URL
+    first, last = search_range(w)
+    if last and last < first:
+        print(f"[{w['id']}] el plazo ya ha pasado, no se vigila.")
+        if not wstate.get("expired_notified"):
+            telegram(w, f"⌛ Ha pasado el plazo que pediste ({plazo_text(w)}) sin que "
+                        f"apareciera una cita, así que dejo de buscar.\n\n{header(w)}", wstate)
+            wstate["expired_notified"] = True
+        return
     try:
         found = PROVIDERS[w["provider"]](w).check()
     except Exception as e:  # noqa: BLE001 - cualquier fallo cuenta como fallo de la comprobación
@@ -601,12 +657,11 @@ def run_watch(w, wstate, heartbeat=False):
     # Solo cuentan los huecos dentro del plazo; los de más allá se mencionan en
     # el "sigo buscando" para saber cómo va la agenda.
     later = []
-    if w["max_days"]:
-        limit = (local_now() + dt.timedelta(days=w["max_days"])).replace(tzinfo=None)
+    if last:
         later = sorted(s for slots in found.values() for s in slots
-                       if slot_time(s) > limit)
-        found = {act: [s for s in slots if slot_time(s) <= limit]
-                 for act, slots in found.items()}
+                       if slot_time(s).date() > last)
+    found = {act: [s for s in slots if first <= slot_time(s).date() <= (last or dt.date.max)]
+             for act, slots in found.items()}
 
     seen = set(wstate.get("seen_slots", []))
     current = {f"{act}|{s}" for act, slots in found.items() for s in slots}
@@ -635,7 +690,7 @@ def run_watch(w, wstate, heartbeat=False):
             except Exception as e:  # noqa: BLE001
                 print(f"[{w['id']}] ON_ALERT: {e}", file=sys.stderr)
     elif heartbeat:
-        plazo = f" en los próximos {w['max_days']} días" if w["max_days"] else ""
+        plazo = f" {plazo_text(w)}" if plazo_text(w) else ""
         estado = (f"{total} huecos{plazo} (ya avisados, sigue habiendo)" if total
                   else f"sin huecos todavía{plazo}")
         if not total and later:
@@ -689,7 +744,7 @@ def main():
             print(f"{w['id']}: {PROVIDER_NAMES[w['provider']]}, {w['doctor_name']}, "
                   + ("activo" if w["enabled"] else "desactivado")
                   + f", {len(w['chat_ids'])} chat(s)"
-                  + (f", próximos {w['max_days']} días" if w["max_days"] else ""))
+                  + (f", {plazo_text(w)}" if plazo_text(w) else ""))
         return 0
     if args.test_notify:
         for w in watches:

@@ -190,6 +190,19 @@ def on_text(chat_id, text):
                           "para afinar.")
         else:
             show_options(chat_id, sess, options, "doc", "¿Cuál es?")
+    elif step == "dates":
+        today = monitor.local_now().date()
+        try:
+            date_from, date_to = parse_range(text, today)
+        except ValueError:
+            send(chat_id, "No entiendo esa fecha. " + DATES_HELP)
+            return
+        if date_from and date_to and date_from > date_to:
+            send(chat_id, "La primera fecha va después de la segunda. Prueba otra vez.")
+        elif date_to and date_to < today.isoformat():
+            send(chat_id, "Esa fecha ya ha pasado. Prueba otra vez.")
+        else:
+            finish(chat_id, sess, date_from=date_from, date_to=date_to)
     elif step == "insurance":
         options = [o for o in sess["all_insurances"] if catalog.matches(text, o["label"])]
         if not options:
@@ -250,13 +263,49 @@ def ask_days(chat_id, sess, activity):
            for d in DAYS[:3]],
           [{"text": f"{d} días" if d else "Sin límite", "callback_data": f"days:{d}"}
            for d in DAYS[3:]],
+          button("📅 Fechas concretas", "days:dates"),
           button("Cancelar", "cancel")])
 
 
-def finish(chat_id, sess, days):
+DATES_HELP = ("Escribe el día o los días que te sirven, por ejemplo:\n"
+              "• <code>20/12</code> (solo ese día)\n"
+              "• <code>15/12 - 23/12</code> (entre esas fechas)\n"
+              "• <code>desde 10/01</code> o <code>hasta 31/01/2027</code>")
+
+
+def parse_date(text, today):
+    """"dd/mm" o "dd/mm/aaaa" (también con - o .). Sin año, la próxima vez que llegue."""
+    parts = [p for p in text.strip().replace("-", "/").replace(".", "/").split("/") if p]
+    if len(parts) not in (2, 3) or not all(p.isdigit() for p in parts):
+        raise ValueError(text)
+    day, month = int(parts[0]), int(parts[1])
+    if len(parts) == 3:
+        year = int(parts[2])
+        return dt.date(year + 2000 if year < 100 else year, month, day)
+    d = dt.date(today.year, month, day)
+    return d if d >= today else dt.date(today.year + 1, month, day)
+
+
+def parse_range(text, today):
+    """(desde, hasta) en ISO ("" = sin límite) a partir de lo que escribe el usuario."""
+    t = text.lower().strip()
+    for word in ("desde", "a partir del", "a partir de", "hasta"):
+        if t.startswith(word):
+            d = parse_date(t[len(word):].removeprefix(" el").strip(), today).isoformat()
+            return ("", d) if word == "hasta" else (d, "")
+    for sep in (" al ", " a ", " - ", " y "):
+        if sep in t:
+            a, b = t.removeprefix("del ").removeprefix("entre ").split(sep, 1)
+            first = parse_date(a, today)
+            return first.isoformat(), parse_date(b, first).isoformat()
+    d = parse_date(t, today).isoformat()
+    return d, d
+
+
+def finish(chat_id, sess, days=0, date_from="", date_to=""):
     cfg = {k: v for k, v in sess["cfg"].items() if not k.startswith("_")}
     cfg.update(provider=sess["provider"], chat_ids=[chat_id], max_days=days,
-               id=f"u{chat_id}-{int(time.time())}")
+               date_from=date_from, date_to=date_to, id=f"u{chat_id}-{int(time.time())}")
     watches, errors = monitor.normalize_watches([cfg])
     if errors:
         send(chat_id, "Algo ha fallado al guardar. Avisa al administrador.")
@@ -268,7 +317,8 @@ def finish(chat_id, sess, days):
     send(chat_id, f"✅ Hecho. Vigilo a <b>{esc(cfg['doctor_name'])}</b>\n"
                   f"{esc(cfg.get('hospital_name', ''))} · {esc(cfg.get('insurance_name', ''))}\n"
                   f"{esc(act)}, "
-                  + (f"en los próximos {days} días." if days else "sin límite de fecha.")
+                  + (f"{monitor.plazo_text(cfg)}." if monitor.plazo_text(cfg)
+                     else "sin límite de fecha.")
                   + "\n\nAhora miro si ya hay huecos; luego, cada 10 minutos.")
     if chat_id != ADMIN:
         send(ADMIN, f"ℹ️ {esc(user_name(chat_id))} vigila a {esc(cfg['doctor_name'])} "
@@ -314,7 +364,7 @@ def list_watches(chat_id, others=False):
     lines, rows = [], []
     for i, w in enumerate(mine, 1):
         act = w.get("services") or w.get("activities") or "cualquier cita"
-        plazo = f"{w['max_days']} días" if w.get("max_days") else "sin límite"
+        plazo = monitor.plazo_text(w) or "sin límite"
         who = f" — de {esc(user_name(w['chat_ids'][0]))}" if others else ""
         lines.append(f"{i}. <b>{esc(w['doctor_name'])}</b>{who}\n"
                      f"   {esc(monitor.PROVIDER_NAMES[w['provider']])} · "
@@ -449,6 +499,9 @@ def handle_callback(cb):
         ask_activity(chat_id, sess)
     elif kind == "act" and sess["step"] == "activity":
         ask_days(chat_id, sess, "" if arg == "all" else sess["activities"][int(arg)])
+    elif kind == "days" and sess["step"] == "days" and arg == "dates":
+        sess["step"] = "dates"
+        send(chat_id, DATES_HELP)
     elif kind == "days" and sess["step"] == "days":
         finish(chat_id, sess, int(arg))
     else:

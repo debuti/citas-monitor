@@ -197,7 +197,9 @@ Claves comunes:
   cambias, se volverá a avisar de los huecos que haya.
 - Opcionales: `doctor_name`, `hospital_name`, `insurance_name` (solo para el texto de
   los mensajes); `max_days` (solo avisa de huecos en los próximos N días; por defecto
-  sin límite); `heartbeat` (`false` para no mandar el "sigo buscando" a ese chat);
+  sin límite); `date_from` / `date_to` (`AAAA-MM-DD`, ambas incluidas: solo avisa de
+  huecos entre esas fechas, y busca a partir de `date_from`; se combinan con `max_days`);
+  `heartbeat` (`false` para no mandar el "sigo buscando" a ese chat);
   `bot_token` (para avisar desde otro bot distinto de `TELEGRAM_BOT_TOKEN`).
 
 ### Vithas
