@@ -465,8 +465,10 @@ def normalize_watches(watches):
 def tg_call(token, method, params):
     req = urllib.request.Request(f"https://api.telegram.org/bot{token}/{method}",
                                  data=urllib.parse.urlencode(params).encode())
+    # En getUpdates Telegram retiene la respuesta hasta "timeout" s (long polling).
+    wait = 30 + int(params.get("timeout") or 0)
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=wait) as resp:
             return json.load(resp)["result"]
     except urllib.error.HTTPError as e:
         try:
