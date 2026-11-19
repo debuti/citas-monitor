@@ -110,7 +110,13 @@ En **Actions → Vigilar citas médicas → Run workflow**:
 
 A partir de ahí busca cada 10 minutos y escribe en cada búsqueda.
 
-## Bot para la familia (Docker + systemd)
+## Bot para la familia
+
+Sin Docker: `./run.sh` lo arranca desacoplado (log en `data/bot.log`, pid en
+`data/bot.pid`) y no hace nada si ya corre; `.tg-service` hace que el bot de Telegram
+lo lance en el contenedor del agente. Para reiniciar: `kill $(cat data/bot.pid); ./run.sh`.
+
+### Modo anterior (Docker + systemd)
 
 `bot.py` deja que cada familiar se apunte sus propias vigilancias desde Telegram, sin
 tocar ninguna configuración. Corre en un contenedor Docker siempre encendido que

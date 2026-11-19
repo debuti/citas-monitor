@@ -1,0 +1,2 @@
+# Comando que el bot de Telegram ejecuta en el contenedor al arrancar y cada 5 min.
+./run.sh
